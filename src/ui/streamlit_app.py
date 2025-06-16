@@ -7,7 +7,7 @@ load_dotenv()
 
 def main():
     st.title("MongoDB Conversation Agent")
-    st.write("🚧 Under Development 🚧")
+    st.write("Under Development")
     
     # basic UI elements
     st.sidebar.header("Settings")
