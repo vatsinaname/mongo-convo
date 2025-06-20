@@ -73,7 +73,7 @@ def get_groq_chat_chain(
     return chain
 
 
-# Example: JSON extraction chain for product details
+# ex- JSON extraction chain for product details
 product_json_parser = JsonOutputParser(pydantic_object={
     "type": "object",
     "properties": {
