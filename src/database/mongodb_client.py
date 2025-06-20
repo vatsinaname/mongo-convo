@@ -1,4 +1,4 @@
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from pymongo import MongoClient
 from pymongo.database import Database
 from pymongo.collection import Collection
@@ -19,7 +19,19 @@ class MongoDBClient:
             raise ValueError("No database selected. Call connect_to_database first.")
         return self.current_db[collection_name]
     
-    def execute_query(self, collection_name: str, query: Dict[str, Any]) -> list:
-        """Execute a MongoDB query on the specified collection."""
+    def execute_query(self, collection_name: str, query: Dict[str, Any], projection: Optional[Dict[str, int]] = None) -> List[Dict[str, Any]]:
+        """Execute a MongoDB find query with optional projection."""
         collection = self.get_collection(collection_name)
+        if projection:
+            return list(collection.find(query, projection))
         return list(collection.find(query))
+
+    def count_documents(self, collection_name: str, query: Dict[str, Any]) -> int:
+        """Count documents matching a query."""
+        collection = self.get_collection(collection_name)
+        return collection.count_documents(query)
+
+    def aggregate(self, collection_name: str, pipeline: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Run an aggregation pipeline on a collection."""
+        collection = self.get_collection(collection_name)
+        return list(collection.aggregate(pipeline))

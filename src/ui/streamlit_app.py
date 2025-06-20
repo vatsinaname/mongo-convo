@@ -5,7 +5,7 @@ from src.database.mongodb_client import MongoDBClient
 from src.agents.nl_processor import NLProcessor
 from src.agents.query_generator import QueryGenerator
 from src.agents.context_manager import ContextManager
-from src.utils import call_groq_api
+from src.utils import call_groq_api, get_groq_chat_chain, product_prompt, product_json_parser
 
 # load environment variables
 load_dotenv()
@@ -42,13 +42,52 @@ def main():
         context.add_message("user", user_input)
         parsed = nl_processor.parse(user_input)
         query_info = query_generator.generate(parsed)
-        # just show the generated query
+        # exec mongodb query if possible
+        mongo_result = None
+        try:
+            if query_info["operation"] == "find":
+                mongo_result = client.execute_query(
+                    query_info["collection"],
+                    query_info["query"],
+                    query_info["projection"]
+                )
+            elif query_info["operation"] == "count_documents":
+                mongo_result = client.count_documents(
+                    query_info["collection"],
+                    query_info["query"]
+                )
+            elif query_info["operation"] == "aggregate":
+                mongo_result = client.aggregate(
+                    query_info["collection"],
+                    query_info.get("pipeline", [])
+                )
+        except Exception as e:
+            mongo_result = f"MongoDB Error: {e}"
         st.code(str(query_info), language="python")
-        # call Groq API for LLM response
-        # llm_response = call_groq_api(user_input)
-        # st.write(llm_response)
-        # add agent response to context
-        context.add_message("agent", f"Query: {query_info}")
+        st.write("**MongoDB Result:**")
+        st.write(mongo_result)
+        # ex- sse groq langchain chain for structured output (product extraction)
+        if st.checkbox("Extract product details from your question (Groq LLM JSON)"):
+            try:
+                chain = get_groq_chat_chain(prompt_template=product_prompt, output_parser=product_json_parser)
+                product_json = chain.invoke({"input": user_input})
+                st.write("**Extracted Product JSON:**")
+                st.json(product_json)
+                context.add_message("agent", str(product_json))
+            except Exception as e:
+                st.error(f"Groq LangChain Error: {e}")
+                context.add_message("agent", f"Groq LangChain Error: {e}")
+        else:
+            # call Groq API for conversational LLM response
+            llm_prompt = f"User asked: {user_input}\nMongoDB result: {mongo_result}\nRespond conversationally."
+            try:
+                llm_response = call_groq_api(llm_prompt)
+                st.write("**LLM Response:**")
+                st.write(llm_response)
+                context.add_message("agent", llm_response or "(No response)")
+            except Exception as e:
+                st.error(f"LLM Error: {e}")
+                context.add_message("agent", f"LLM Error: {e}")
 
     # show conversation history
     st.subheader("Conversation History")
