@@ -2,7 +2,6 @@ import sys
 import os
 from dotenv import load_dotenv
 import streamlit as st
-# ensure src/ is in sys.path for imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from database.mongodb_client import MongoDBClient
 from agents.nl_processor import NLProcessor
@@ -41,7 +40,7 @@ def main():
     # chat interface
     st.subheader("Chat")
     user_input = st.text_input("Ask about your database:")
-    if user_input and client:
+    if user_input and client is not None:
         context.add_message("user", user_input)
         parsed = nl_processor.parse(user_input)
         query_info = query_generator.generate(parsed)
