@@ -1,11 +1,14 @@
-import streamlit as st
+import sys
 import os
 from dotenv import load_dotenv
-from src.database.mongodb_client import MongoDBClient
-from src.agents.nl_processor import NLProcessor
-from src.agents.query_generator import QueryGenerator
-from src.agents.context_manager import ContextManager
-from src.utils import call_groq_api, get_groq_chat_chain, product_prompt, product_json_parser
+import streamlit as st
+# ensure src/ is in sys.path for imports
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from database.mongodb_client import MongoDBClient
+from agents.nl_processor import NLProcessor
+from agents.query_generator import QueryGenerator
+from agents.context_manager import ContextManager
+from utils import call_groq_api, get_groq_chat_chain, product_prompt, product_json_parser
 
 # load environment variables
 load_dotenv()
@@ -93,6 +96,8 @@ def main():
     st.subheader("Conversation History")
     for msg in context.get_history(10):
         st.markdown(f"**{msg['role'].capitalize()}:** {msg['message']}")
+    #import os
+    #st.write("GROQ_API_KEY:", os.getenv("GROQ_API_KEY"))
 
 if __name__ == "__main__":
     main()
