@@ -15,7 +15,13 @@ class QueryGenerator:
         filters = parsed_input.get("filters", {})
 
         query = filters or {}
-        projection = {field: 1 for field in fields} if fields else None
+        #special projection for customers- show only name
+        if collection == "customers":
+            projection = {"name": 1, "_id": 0}
+        elif fields:
+            projection = {field: 1 for field in fields}
+        else:
+            projection = None
 
         if intent == "count":
             operation = "count_documents"

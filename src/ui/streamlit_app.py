@@ -72,7 +72,14 @@ def main():
         st.code(str(query_info), language="python")
         st.write("**MongoDB Result:**")
         st.write(mongo_result)
-        # ex- sse groq langchain chain for structured output (product extraction)
+        #show customer names if collection is customers
+        if query_info["collection"] == "customers" and mongo_result:
+            st.write("Customer Names:")
+            for doc in mongo_result:
+                st.write(doc.get("name", "(no name)"))
+        elif not mongo_result:
+            st.info("No customers found.")
+        #groq langchain chain for structured output product extraction
         if st.checkbox("Extract product details from your question (Groq LLM JSON)"):
             try:
                 chain = get_groq_chat_chain(prompt_template=product_prompt, output_parser=product_json_parser)

@@ -136,7 +136,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-
+import pymongo.py
 # Spyder project settings
 .spyderproject
 .spyproject
