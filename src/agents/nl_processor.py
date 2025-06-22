@@ -40,6 +40,22 @@ class NLProcessor:
         match = re.search(r"in ([a-zA-Z0-9_]+)", text)
         if match:
             return match.group(1)
+        # infer collection from keywords for sample analytics dataset
+        collection_map = {
+            "user": "customers",
+            "users": "customers",
+            "customer": "customers",
+            "customers": "customers",
+            "account": "accounts",
+            "accounts": "accounts",
+            "transaction": "transactions",
+            "transactions": "transactions",
+            "session": "sessions",
+            "sessions": "sessions"
+        }
+        for keyword, collection in collection_map.items():
+            if re.search(rf"\b{keyword}\b", text):
+                return collection
         return ""
 
     def _extract_fields(self, text: str) -> list:

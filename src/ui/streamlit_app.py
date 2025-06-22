@@ -43,7 +43,11 @@ def main():
     if user_input and client is not None:
         context.add_message("user", user_input)
         parsed = nl_processor.parse(user_input)
+        st.write("Parsed:", parsed)  # debug output
         query_info = query_generator.generate(parsed)
+        st.write("Query Info:", query_info)  # debug output
+        if not query_info["collection"]:
+            st.warning("Could not determine the collection name from your query. Please specify the collection explicitly (e.g., 'List all users from customers').")
         # exec mongodb query if possible
         mongo_result = None
         try:
