@@ -15,11 +15,19 @@ class QueryGenerator:
         filters = parsed_input.get("filters", {})
 
         query = filters or {}
-        #special projection for customers- show only name
-        if collection == "customers":
-            projection = {"name": 1, "_id": 0}
-        elif fields:
+        # generalised
+        default_fields = {
+            "customers": ["name"],
+            "accounts": ["account_id"],
+            "transactions": ["amount", "account_id"],
+            "sessions": ["session_id"]
+        }
+        if fields:
             projection = {field: 1 for field in fields}
+            projection["_id"] = 0
+        elif collection in default_fields:
+            projection = {field: 1 for field in default_fields[collection]}
+            projection["_id"] = 0
         else:
             projection = None
 
