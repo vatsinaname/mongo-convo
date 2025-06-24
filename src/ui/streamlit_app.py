@@ -12,6 +12,68 @@ from utils import call_groq_api, get_groq_chat_chain, product_prompt, product_js
 # load environment variables
 load_dotenv()
 
+# Default projections for sample_analytics collections
+DEFAULT_PROJECTIONS = {
+    "customers": {"_id": 0, "username": 1, "name": 1, "email": 1, "accounts": 1, "tier_and_details": 1},
+    "accounts": {"_id": 0, "account_id": 1, "limit": 1, "products": 1},
+    "transactions": {"_id": 0, "account_id": 1, "transaction_count": 1, "transactions": 1},
+}
+
+# System message for LLM prompt
+SAMPLE_ANALYTICS_SYSTEM_MSG = (
+    "You are an expert MongoDB assistant. The database is 'sample_analytics' and contains these collections: "
+    "'customers' (fields: username, name, address, birthdate, email, accounts, tier_and_details), "
+    "'accounts' (fields: account_id, limit, products), "
+    "'transactions' (fields: account_id, transaction_count, bucket_start_date, bucket_end_date, transactions). "
+    "Always use the correct collection and field names. If the user does not specify a projection, use the most relevant fields for the collection."
+)
+
+def extract_json_from_text(text: str, debug=False, st_warn=None):
+    """
+    Extract the first complete valid JSON object from a string, even if surrounded by text or markdown.
+    Uses a stack-based approach to find the first top-level {...} block with balanced braces.
+    Tries to parse as soon as a balanced block is found. If parsing fails, continues searching.
+    If st_warn is provided, shows a Streamlit warning if auto-fix is used.
+    Returns the parsed dict, or None if not found.
+    """
+    import re
+    import json
+    if not text:
+        return None
+    # Remove markdown code block markers
+    text = re.sub(r'```[a-zA-Z]*', '', text)
+    # Find the first top-level {...} block using a stack
+    start = None
+    stack = []
+    for i, c in enumerate(text):
+        if c == '{':
+            if not stack:
+                start = i
+            stack.append('{')
+        elif c == '}':
+            if stack:
+                stack.pop()
+                if not stack and start is not None:
+                    json_str = text[start:i+1]
+                    try:
+                        return json.loads(json_str)
+                    except Exception as e:
+                        if debug:
+                            print(f"Failed to parse JSON: {json_str}\nError: {e}")
+                        # Try to auto-fix by adding a closing brace if missing
+                        if json_str.count('{') > json_str.count('}'):
+                            fixed_json_str = json_str + '}'
+                            try:
+                                result = json.loads(fixed_json_str)
+                                if st_warn:
+                                    st_warn("Auto-fixed LLM JSON by adding a closing brace. Please check LLM output quality.")
+                                return result
+                            except Exception as e2:
+                                if debug:
+                                    print(f"Failed to auto-fix JSON: {fixed_json_str}\nError: {e2}")
+                    # Continue searching for next block
+    return None
+
 def main():
     st.title("MongoDB Conversation Agent")
     st.write("Chat with your MongoDB using natural language!")
@@ -52,29 +114,34 @@ def main():
         context.add_message("user", user_input)
         # LLM query translation
         if use_llm_query:
-            # compose a prompt with context and user input
+            # Compose a prompt with context, system message, and user input
             chat_history = "\n".join([
                 f"{msg['role'].capitalize()}: {msg['message']}" for msg in context.get_history(5)
             ])
             llm_query_prompt = (
-                f"You are a MongoDB expert assistant.\n"
+                f"{SAMPLE_ANALYTICS_SYSTEM_MSG}\n"
                 f"Conversation so far:\n{chat_history}\n"
                 f"User question: {user_input}\n"
                 f"Translate the user's question into a MongoDB query. "
-                f"If the collection or intent is unclear, ask a clarifying question. "
-                f"Return a JSON object with keys: collection, operation, query, projection, and pipeline (if aggregation)."
+                f"If the collection or intent is unclear think what the user might mean based on your understanding and return the MongoDB query first.\n"
+                f"Return only a JSON object with keys: collection, operation, query, projection."
             )
             try:
                 llm_query_response = call_groq_api(llm_query_prompt)
                 st.write("**LLM Query Translation Output:**")
                 st.code(llm_query_response, language="json")
-                # try to parse the LLM output as query_info
-                import json
+                # try to extract and parse the JSON from the LLM output
                 if llm_query_response:
-                    try:
-                        query_info = json.loads(llm_query_response)
-                    except Exception:
-                        st.warning("Could not parse LLM output as JSON. Falling back to rule-based translation.")
+                    # Show raw LLM output for debugging
+                    st.expander("LLM Raw Output / Debug").write(llm_query_response)
+                    query_info = extract_json_from_text(llm_query_response, debug=True, st_warn=st.warning)
+                    if not query_info:
+                        st.warning("Could not extract valid JSON from LLM output. Falling back to rule-based translation.")
+                        # Show attempted JSON blocks for debugging
+                        import re
+                        matches = re.findall(r'\{[\s\S]*?\}', llm_query_response)
+                        if matches:
+                            st.expander("Attempted JSON blocks").write(matches)
                         parsed = nl_processor.parse(user_input)
                         st.write("Parsed:", parsed)  # debug output
                         query_info = query_generator.generate(parsed)
@@ -93,6 +160,15 @@ def main():
             st.write("Parsed:", parsed)  # debug output
             query_info = query_generator.generate(parsed)
         st.write("Query Info:", query_info)  # debug output
+        # ensure all required keys are present for MongoDB execution
+        collection_name = query_info.get("collection")
+        if "projection" not in query_info or not query_info["projection"]:
+            if collection_name and collection_name in DEFAULT_PROJECTIONS:
+                st.warning(f"LLM output missing or empty 'projection' field. Using default for {collection_name}.")
+                query_info["projection"] = DEFAULT_PROJECTIONS[collection_name]
+            else:
+                st.warning("LLM output missing 'projection' field. Using default: None.")
+                query_info["projection"] = None
         if not query_info.get("collection"):
             st.warning("Could not determine the collection name from your query. Please specify the collection explicitly (e.g., 'List all users from customers').")
         # exec mongodb query if possible
@@ -112,10 +188,8 @@ def main():
                     query_info["query"]
                 )
             elif query_info.get("operation") == "aggregate":
-                mongo_result = client.aggregate(
-                    query_info["collection"],
-                    query_info.get("pipeline", [])
-                )
+                st.warning("Aggregation pipeline is not supported in this app.")
+                mongo_result = "Aggregation pipeline is not supported."
         except Exception as e:
             st.error(f"MongoDB Error: {e}")
             st.write(f"Exception details: {e}")  # debug output
@@ -135,7 +209,7 @@ def main():
             # extra debug- list collections and sample doc
         try:
             client_db = getattr(st.session_state.client, 'current_db', None)
-            if client_db:
+            if client_db is not None:
                 collections = client_db.list_collection_names()
                 st.write(f"Collections in DB: {collections}")
                 if query_info["collection"] in collections:

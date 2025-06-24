@@ -98,3 +98,27 @@ def parse_product(description: str) -> dict:
     )
     result = chain.invoke({"input": description})
     return result
+
+
+def extract_json_from_text(text: str) -> Optional[dict]:
+    """
+    Extract the first complete JSON object from a string, even if surrounded by text or markdown.
+    Returns the parsed dict, or None if not found or incomplete.
+    """
+    import re
+    import json
+    if not text:
+        return None
+    # find the first {...} block (non greedy)
+    match = re.search(r'\{[\s\S]*?\}', text)
+    if match:
+        json_str = match.group(0)
+        # check for balanced braces/complete JSON
+        if json_str.count('{') != json_str.count('}'):
+            # unbalanced braces, likely incomplete JSON
+            return None
+        try:
+            return json.loads(json_str)
+        except Exception:
+            return None
+    return None

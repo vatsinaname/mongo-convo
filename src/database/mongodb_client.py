@@ -24,10 +24,11 @@ class MongoDBClient:
         collection = self.get_collection(collection_name)
         if collection is None:
             return []
-        if projection:
-            result = list(collection.find(query, projection))
-        else:
+        # Treat empty dict as None for projection
+        if not projection:
             result = list(collection.find(query))
+        else:
+            result = list(collection.find(query, projection))
         return result if result else []
 
     def count_documents(self, collection_name: str, query: Dict[str, Any]) -> int:
