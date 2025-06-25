@@ -115,17 +115,16 @@ def extract_json_from_text(text: str, debug=False, st_warn=None):
     import json
     if not text:
         return None
-    # Remove markdown code block markers
+    # removing markdown code block markers
     text = re.sub(r'```[a-zA-Z]*', '', text)
-    # Preprocess: convert single quotes to double quotes for JSON keys/values (careful, not perfect for nested quotes)
+    # converting single to double quotes for JSON keys/values not perfect for nested quotes
     text = re.sub(r"'([a-zA-Z0-9_]+)'", r'"\\1"', text)
-    text = re.sub(r'"([a-zA-Z0-9_]+)":', r'"\\1":', text)  # ensure keys are quoted
-    # Replace curly quotes with straight quotes
+    # replacing curly quotes with straight
     text = text.replace('“', '"').replace('”', '"').replace('‘', "'").replace('’', "'")
-    # Remove newlines and excessive whitespace inside JSON blocks to help parser
+    # removing newlines and excessive whitespace inside JSON blocks to help parser
     text = re.sub(r'([\{\}\[\],:])\s*\n+\s*', r'\1', text)
     text = re.sub(r'\n+', ' ', text)
-    # Find the first top-level {...} block using a stack
+    # find the first top level block using a stack
     start = None
     stack = []
     for i, c in enumerate(text):
@@ -143,7 +142,7 @@ def extract_json_from_text(text: str, debug=False, st_warn=None):
                     except Exception as e:
                         if debug:
                             print(f"Failed to parse JSON: {json_str}\nError: {e}")
-                        # Try to auto-fix by adding a closing brace if missing
+                        # try to auto fix by adding a closing brace if missing
                         if json_str.count('{') > json_str.count('}'):
                             fixed_json_str = json_str + '}'
                             try:
@@ -154,7 +153,7 @@ def extract_json_from_text(text: str, debug=False, st_warn=None):
                             except Exception as e2:
                                 if debug:
                                     print(f"Failed to auto-fix JSON: {fixed_json_str}\nError: {e2}")
-                    # Continue searching for next block
+                    # continue searching for next
     return None
 
 def main():
@@ -211,17 +210,19 @@ def main():
 
     clarification_needed = st.session_state.get("clarification_needed", False)
     clarification_question = st.session_state.get("clarification_question", "")
+    clarification_prev_query = st.session_state.get("clarification_prev_query", "")
     clarification_response = ""
     clarification_submitted = False
     if clarification_needed and clarification_question:
-        clarification_response, clarification_submitted = clarification_window(clarification_question)
+        clarification_response, clarification_submitted = clarification_window(clarification_question, clarification_prev_query)
 
-    # Main query logic: only run if button pressed and not in clarification mode
+    clarification_sentence = None
+    # main query logic only run if button pressed and not in clarification mode
     if run_query and user_input and client is not None and not clarification_needed:
         context.add_message("user", user_input)
         # LLM query translation
         if use_llm_query:
-            # Compose a prompt with context, system message, and user input
+            # compose a prompt with context, system message, and user input
             chat_history = "\n".join([
                 f"{msg['role'].capitalize()}: {msg['message']}" for msg in context.get_history(5)
             ])
@@ -232,7 +233,7 @@ def main():
                 f"Translate the user's question into a MongoDB query. "
                 f"If the collection or intent is unclear think what the user might mean based on your understanding and return the MongoDB query first.\n"
                 f"Return only a JSON object with keys: collection, operation, query, projection."
-                f"Do not use 'name': 'John'. Always use the regex format as shown."            
+                f"Do not use 'name': 'John'. Always use the regex format as shown."
             )
             try:
                 llm_query_response = call_groq_api(llm_query_prompt)
@@ -243,9 +244,17 @@ def main():
                     # Show raw LLM output for debugging
                     st.expander("LLM Raw Output / Debug").write(llm_query_response)
                     query_info = extract_json_from_text(llm_query_response, debug=True, st_warn=st.warning)
+                    # simple clarification detection
+                    clarification_keywords = ["would you like", "do you want", "should I", "can I", "could you", "please specify", "which", "what kind", "narrow down", "filter further"]
+                    clarification_sentence = None
+                    if llm_query_response:
+                        for sentence in llm_query_response.split(". "):
+                            if "?" in sentence or any(kw in sentence.lower() for kw in clarification_keywords):
+                                clarification_sentence = sentence.strip()
+                                break
                     if not query_info:
                         st.warning("Could not extract valid JSON from LLM output. Falling back to rule-based translation.")
-                        # Show attempted JSON blocks for debugging
+                        # show attempted JSON blocks for debugging
                         import re
                         matches = re.findall(r'\{[\s\S]*?\}', llm_query_response)
                         if matches:
@@ -283,6 +292,12 @@ def main():
                 query_info["projection"] = {"name": 1, "_id": 0}
         if not query_info.get("collection"):
             st.warning("Could not determine the collection name from your query. Please specify the collection explicitly (e.g., 'List all users from customers').")
+        # --- Clarification logic: trigger immediately if needed ---
+        if not collection_name or clarification_sentence:
+            st.session_state["clarification_needed"] = True
+            st.session_state["clarification_question"] = clarification_sentence or "Could not determine the collection name from your query. Please specify the collection explicitly."
+            st.session_state["clarification_prev_query"] = user_input
+            st.stop()
         # exec mongodb query if possible
         mongo_result = None
         try:
@@ -326,33 +341,15 @@ def main():
                 st.write(f"Collections in DB: {collections}")
                 if query_info["collection"] in collections:
                     collection_obj = client_db.get_collection(query_info["collection"])
-                    if collection_obj:
+                    if collection_obj is not None:
                         sample_doc = collection_obj.find_one()
                         st.write(f"Sample doc in '{query_info['collection']}': {sample_doc}")
             else:
                 st.write("No database connection available for listing collections or sample doc.")
         except Exception as e:
             st.write(f"Error listing collections or sample doc: {e}")
-        # product extraction feature explanation n ui
-        with st.expander("What does 'Extract product from your question (Groq LLM JSON)' do?", expanded=False):
-            st.markdown("""
-            This feature uses the Groq LLM to extract structured product details (like product name, category, price, brand, etc.) from your question and returns them as a JSON object.
-
-            **How it works:**
-            1. You enter a question such as: "Show me details for the iPhone 15 Pro in electronics."
-            2. The app sends your question to the Groq LLM with a prompt to extract product details as JSON.
-            3. The LLM returns a JSON object, e.g.:
-               ```json
-               {"product_name": "iPhone 15 Pro", "category": "electronics"}
-               ```
-            4. The app displays this structured JSON, making it easy to use in further queries or integrations.
-
-            **Use cases:**
-            - Quickly extract product details from unstructured queries.
-            - Enable automation, reporting, or integration with other systems.
-            - Improve accuracy and consistency in product data handling.
-            """)
-        #groq langchain chain for structured output product extraction
+        # Removed product extraction feature (UI and logic)
+        # Groq LangChain chain for structured output product extraction
         if st.checkbox("Extract product details from your question (Groq LLM JSON)", key="extract_product_checkbox_main"):
             try:
                 chain = get_groq_chat_chain(prompt_template=product_prompt, output_parser=product_json_parser)
@@ -363,32 +360,29 @@ def main():
             except Exception as e:
                 st.error(f"Groq LangChain Error: {e}")
                 context.add_message("agent", f"Groq LangChain Error: {e}")
-        else:
-            # call Groq API for conversational LLM response
-            chat_history = "\n".join([
-                f"{msg['role'].capitalize()}: {msg['message']}" for msg in context.get_history(5)
-            ])
-            llm_prompt = f"Conversation so far:\n{chat_history}\nUser asked: {user_input}\nMongoDB result: {mongo_result}\nRespond conversationally, ask clarifying questions if needed."
-            try:
-                llm_response = call_groq_api(llm_prompt)
-                # simple clarification detection
-                clarification_keywords = ["would you like", "do you want", "should I", "can I", "could you", "please specify", "which", "what kind", "narrow down", "filter further"]
-                clarification_sentence = None
-                if llm_response:
-                    # find the first question sentence
-                    for sentence in llm_response.split(". "):
-                        if "?" in sentence or any(kw in sentence.lower() for kw in clarification_keywords):
-                            clarification_sentence = sentence.strip()
-                            break
-                if clarification_sentence:
-                    st.session_state["clarification_needed"] = True
-                    st.session_state["clarification_question"] = clarification_sentence
-                st.write("**LLM Response:**")
-                st.write(llm_response)
-                context.add_message("agent", llm_response or "(No response)")
-            except Exception as e:
-                st.error(f"LLM Error: {e}")
-                context.add_message("agent", f"LLM Error: {e}")
+        # Always show LLM conversational output after MongoDB result
+        chat_history = "\n".join([
+            f"{msg['role'].capitalize()}: {msg['message']}" for msg in context.get_history(5)
+        ])
+        llm_prompt = f"Conversation so far:\n{chat_history}\nUser asked: {user_input}\nMongoDB result: {mongo_result}\nRespond conversationally, ask clarifying questions if needed."
+        try:
+            llm_response = call_groq_api(llm_prompt)
+            clarification_keywords = ["would you like", "do you want", "should I", "can I", "could you", "please specify", "which", "what kind", "narrow down", "filter further"]
+            clarification_sentence = None
+            if llm_response:
+                for sentence in llm_response.split(". "):
+                    if "?" in sentence or any(kw in sentence.lower() for kw in clarification_keywords):
+                        clarification_sentence = sentence.strip()
+                        break
+            if clarification_sentence:
+                st.session_state["clarification_needed"] = True
+                st.session_state["clarification_question"] = clarification_sentence
+            st.write("**LLM Response:**")
+            st.write(llm_response)
+            context.add_message("agent", llm_response or "(No response)")
+        except Exception as e:
+            st.error(f"LLM Error: {e}")
+            context.add_message("agent", f"LLM Error: {e}")
 
     # clarification logic only run if clarification form submitted
     if clarification_submitted and clarification_response and client is not None:
@@ -397,6 +391,7 @@ def main():
         # reset clarification state
         st.session_state["clarification_needed"] = False
         st.session_state["clarification_question"] = ""
+        st.session_state["clarification_prev_query"] = ""
         # rerun the main query logic with the clarification as the latest message
         # LLM query translation
         if use_llm_query:
@@ -505,33 +500,15 @@ def main():
                 st.write(f"Collections in DB: {collections}")
                 if query_info["collection"] in collections:
                     collection_obj = client_db.get_collection(query_info["collection"])
-                    if collection_obj:
+                    if collection_obj is not None:
                         sample_doc = collection_obj.find_one()
                         st.write(f"Sample doc in '{query_info['collection']}': {sample_doc}")
             else:
                 st.write("No database connection available for listing collections or sample doc.")
         except Exception as e:
             st.write(f"Error listing collections or sample doc: {e}")
-        # product extraction feature explanation n ui
-        with st.expander("What does 'Extract product from your question (Groq LLM JSON)' do?", expanded=False):
-            st.markdown("""
-            This feature uses the Groq LLM to extract structured product details (like product name, category, price, brand, etc.) from your question and returns them as a JSON object.
-
-            **How it works:**
-            1. You enter a question such as: "Show me details for the iPhone 15 Pro in electronics."
-            2. The app sends your question to the Groq LLM with a prompt to extract product details as JSON.
-            3. The LLM returns a JSON object, e.g.:
-               ```json
-               {"product_name": "iPhone 15 Pro", "category": "electronics"}
-               ```
-            4. The app displays this structured JSON, making it easy to use in further queries or integrations.
-
-            **Use cases:**
-            - Quickly extract product details from unstructured queries.
-            - Enable automation, reporting, or integration with other systems.
-            - Improve accuracy and consistency in product data handling.
-            """)
-        #groq langchain chain for structured output product extraction
+        # Removed product extraction feature (UI and logic)
+        # Groq LangChain chain for structured output product extraction
         if st.checkbox("Extract product details from your question (Groq LLM JSON)", key="extract_product_checkbox_clarification"):
             try:
                 chain = get_groq_chat_chain(prompt_template=product_prompt, output_parser=product_json_parser)
@@ -542,32 +519,29 @@ def main():
             except Exception as e:
                 st.error(f"Groq LangChain Error: {e}")
                 context.add_message("agent", f"Groq LangChain Error: {e}")
-        else:
-            # call Groq API for conversational LLM response
-            chat_history = "\n".join([
-                f"{msg['role'].capitalize()}: {msg['message']}" for msg in context.get_history(5)
-            ])
-            llm_prompt = f"Conversation so far:\n{chat_history}\nUser asked: {user_input}\nMongoDB result: {mongo_result}\nRespond conversationally, ask clarifying questions if needed."
-            try:
-                llm_response = call_groq_api(llm_prompt)
-                # simple clarification detection
-                clarification_keywords = ["would you like", "do you want", "should I", "can I", "could you", "please specify", "which", "what kind", "narrow down", "filter further"]
-                clarification_sentence = None
-                if llm_response:
-                    # Find the first question sentence
-                    for sentence in llm_response.split(". "):
-                        if "?" in sentence or any(kw in sentence.lower() for kw in clarification_keywords):
-                            clarification_sentence = sentence.strip()
-                            break
-                if clarification_sentence:
-                    st.session_state["clarification_needed"] = True
-                    st.session_state["clarification_question"] = clarification_sentence
-                st.write("**LLM Response:**")
-                st.write(llm_response)
-                context.add_message("agent", llm_response or "(No response)")
-            except Exception as e:
-                st.error(f"LLM Error: {e}")
-                context.add_message("agent", f"LLM Error: {e}")
+        # Always show LLM conversational output after MongoDB result (clarification flow)
+        chat_history = "\n".join([
+            f"{msg['role'].capitalize()}: {msg['message']}" for msg in context.get_history(5)
+        ])
+        llm_prompt = f"Conversation so far:\n{chat_history}\nUser asked: {clarification_response}\nMongoDB result: {mongo_result}\nRespond conversationally, ask clarifying questions if needed."
+        try:
+            llm_response = call_groq_api(llm_prompt)
+            clarification_keywords = ["would you like", "do you want", "should I", "can I", "could you", "please specify", "which", "what kind", "narrow down", "filter further"]
+            clarification_sentence = None
+            if llm_response:
+                for sentence in llm_response.split(". "):
+                    if "?" in sentence or any(kw in sentence.lower() for kw in clarification_keywords):
+                        clarification_sentence = sentence.strip()
+                        break
+            if clarification_sentence:
+                st.session_state["clarification_needed"] = True
+                st.session_state["clarification_question"] = clarification_sentence
+            st.write("**LLM Response:**")
+            st.write(llm_response)
+            context.add_message("agent", llm_response or "(No response)")
+        except Exception as e:
+            st.error(f"LLM Error: {e}")
+            context.add_message("agent", f"LLM Error: {e}")
 
     # show conversation history
     st.subheader("Conversation History")

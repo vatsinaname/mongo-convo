@@ -11,13 +11,15 @@ def clarification_form(clarification_question: str, key_prefix: str = "clarifica
         clarification_submitted = st.form_submit_button("Send Clarification")
     return clarification_response, clarification_submitted
 
-def clarification_window(clarification_question: str):
+def clarification_window(clarification_question: str, prev_query: str = ""):
     """
     Renders the clarification window/form for the user to answer a follow-up question.
     Returns (response, submitted) tuple.
     """
     with st.form(key="clarification_window_form", clear_on_submit=True):
         st.info(f"**Clarification needed:** {clarification_question}")
-        clarification_response = st.text_input("Your answer:", key="clarification_window_response_input")
+        if prev_query:
+            st.markdown(f"**Previous query:** `{prev_query}`")
+        clarification_response = st.text_input("Your answer:", value=prev_query, key="clarification_window_response_input")
         clarification_submitted = st.form_submit_button("Submit Clarification")
     return clarification_response, clarification_submitted
