@@ -9,10 +9,13 @@ class QueryGenerator:
         Generate a MongoDB query dict from parsed input.
         Returns a dict with keys: collection, query, projection, operation
         """
+        print("[DEBUG] Parsed input to QueryGenerator:", parsed_input)  # TEMP DEBUG
         intent = parsed_input.get("intent", "find")
         collection = parsed_input.get("collection", "")
         fields = parsed_input.get("fields", [])
         filters = parsed_input.get("filters", {})
+
+        print(f"[DEBUG] intent: {intent}, collection: {collection}, fields: {fields}, filters: {filters}")  # TEMP DEBUG
 
         query = filters or {}
         # generalised
@@ -31,6 +34,8 @@ class QueryGenerator:
         else:
             projection = None
 
+        print(f"[DEBUG] query: {query}, projection: {projection}")  # TEMP DEBUG
+
         if intent == "count":
             operation = "count_documents"
         elif intent == "find":
@@ -40,9 +45,11 @@ class QueryGenerator:
         else:
             operation = "find"
 
-        return {
+        result = {
             "collection": collection,
             "query": query,
             "projection": projection,
             "operation": operation
         }
+        print("[DEBUG] QueryGenerator output:", result)  # TEMP DEBUG
+        return result

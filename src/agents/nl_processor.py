@@ -10,11 +10,11 @@ class NLProcessor:
         Parse user input and extract intent, collection, and fields.
         Returns a dict with keys: intent, collection, fields, filters
         """
-        user_input = user_input.lower()
-        intent = self._detect_intent(user_input)
-        collection = self._extract_collection(user_input)
-        fields = self._extract_fields(user_input)
-        filters = self._extract_filters(user_input)
+        # Only lowercase for intent/collection, preserve original for filters
+        intent = self._detect_intent(user_input.lower())
+        collection = self._extract_collection(user_input.lower())
+        fields = self._extract_fields(user_input.lower())
+        filters = self._extract_filters(user_input)  # use original casing for names
         return {
             "intent": intent,
             "collection": collection,
@@ -67,6 +67,21 @@ class NLProcessor:
         return []
 
     def _extract_filters(self, text: str) -> dict:
-        # placeholder for filter extraction
-        # eg 'where age > 30'
+        # Enhanced: extract name-based filters using regex for word match
+        # e.g. 'named John', 'with name Smith', 'whose name is Brown', 'list users John'
+        name_match = re.search(r"named ([a-zA-Z0-9]+)", text)
+        if not name_match:
+            name_match = re.search(r"name (?:is|=)? ?([a-zA-Z0-9]+)", text)
+        if not name_match:
+            # e.g. 'list users John', 'show customers John'
+            name_match = re.search(r"(?:users?|customers?) ([a-zA-Z0-9]+)", text)
+        if not name_match:
+            # fallback: if the query ends with a single capitalized word, treat as name
+            tokens = text.strip().split()
+            if len(tokens) > 1 and tokens[-1][0].isalpha() and tokens[-1][0].isupper():
+                name = tokens[-1]
+                return {"name": {"$regex": fr"\\b{name}\\b", "$options": "i"}}
+        if name_match:
+            name = name_match.group(1)
+            return {"name": {"$regex": fr"\\b{name}\\b", "$options": "i"}}
         return {}

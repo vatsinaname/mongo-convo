@@ -25,7 +25,10 @@ SAMPLE_ANALYTICS_SYSTEM_MSG = (
     "'customers' (fields: username, name, address, birthdate, email, accounts, tier_and_details), "
     "'accounts' (fields: account_id, limit, products), "
     "'transactions' (fields: account_id, transaction_count, bucket_start_date, bucket_end_date, transactions). "
-    "Always use the correct collection and field names. If the user does not specify a projection, use the most relevant fields for the collection."
+    "Always use the correct collection and field names. If the user does not specify a projection, use the most relevant fields for the collection. "
+    "For substring or partial name matching in the 'name' field, always use the following regex format: "
+    "regex_query = {'name': {'$regex': r'\\bInput\\b', '$options': 'i'}}; projection = {'_id': 0, 'name': 1}. "
+    "Replace 'Input' with the actual name or substring to match. Adhere to this format strictly in your MongoDB queries."
 )
 
 def extract_json_from_text(text: str, debug=False, st_warn=None):
@@ -35,6 +38,8 @@ def extract_json_from_text(text: str, debug=False, st_warn=None):
     Tries to parse as soon as a balanced block is found. If parsing fails, continues searching.
     If st_warn is provided, shows a Streamlit warning if auto-fix is used.
     Returns the parsed dict, or None if not found.
+    Use the following regex format for substring matching regex_query = {"name": {"$regex": r"\bInput\b", "$options": "i"}}
+    projection = {"_id": 0, "name": 1}
     """
     import re
     import json
@@ -76,24 +81,29 @@ def extract_json_from_text(text: str, debug=False, st_warn=None):
 
 def main():
     st.title("MongoDB Conversation Agent")
-    st.write("Chat with your MongoDB using natural language!")
+    st.write("Chat with your MongoDB using natural language.")
 
     # sidebar for settings
     st.sidebar.header("Settings")
     # try to auto detect the correct database if not set
     default_db = os.getenv("MONGO_DEFAULT_DB") or "sample_analytics"
-    connection_string = st.sidebar.text_input(
-        "MongoDB Connection String",
-        value=os.getenv("MONGO_URI", ""),
-        type="password"
-    )
-    db_name = st.sidebar.text_input("Database Name", value=default_db)
-
-    # option to use LLM for query translation
-    use_llm_query = st.sidebar.checkbox("Use LLM for advanced query translation", value=False)
-    st.sidebar.markdown("""
-    <small>If enabled, the LLM will attempt to translate your natural language question into a MongoDB query. If disabled, a rule-based approach is used.</small>
-    """, unsafe_allow_html=True)
+    # Only show the connection string input if not set in env
+    if not os.getenv("MONGO_URI"):
+        connection_string = st.sidebar.text_input(
+            "MongoDB Connection String",
+            value="",
+            type="password",
+            disabled=False
+        )
+    else:
+        connection_string = os.getenv("MONGO_URI")
+        st.sidebar.text_input(
+            "MongoDB Connection String (set via environment, hidden)",
+            value="************",
+            type="password",
+            disabled=True
+        )
+    db_name = st.sidebar.text_input("Database Name", value=default_db, disabled=not bool(connection_string))
 
     # initialise session state for context
     if "context" not in st.session_state:
@@ -109,7 +119,12 @@ def main():
 
     # chat interface
     st.subheader("Chat")
-    user_input = st.text_input("Ask about your database:")
+    # Move use_llm_query here so it's always defined before use
+    use_llm_query = st.sidebar.checkbox("Use LLM for advanced query translation", value=False)
+    st.sidebar.markdown("""
+    <small>If enabled, the LLM will attempt to translate your natural language question into a MongoDB query. If disabled, a rule-based approach is used.</small>
+    """, unsafe_allow_html=True)
+    user_input = st.text_input("Ask about your database:", disabled=not bool(client))
     if user_input and client is not None:
         context.add_message("user", user_input)
         # LLM query translation
@@ -125,6 +140,7 @@ def main():
                 f"Translate the user's question into a MongoDB query. "
                 f"If the collection or intent is unclear think what the user might mean based on your understanding and return the MongoDB query first.\n"
                 f"Return only a JSON object with keys: collection, operation, query, projection."
+                f"Do not use 'name': 'John'. Always use the regex format as shown."            
             )
             try:
                 llm_query_response = call_groq_api(llm_query_prompt)
@@ -159,6 +175,8 @@ def main():
             parsed = nl_processor.parse(user_input)
             st.write("Parsed:", parsed)  # debug output
             query_info = query_generator.generate(parsed)
+            st.write("[DEBUG] Rule-based parsed:", parsed)  # TEMP DEBUG
+            st.write("[DEBUG] Rule-based query_info:", query_info)  # TEMP DEBUG
         st.write("Query Info:", query_info)  # debug output
         # ensure all required keys are present for MongoDB execution
         collection_name = query_info.get("collection")
