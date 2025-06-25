@@ -24,7 +24,7 @@ class MongoDBClient:
         collection = self.get_collection(collection_name)
         if collection is None:
             return []
-        # Treat empty dict as None for projection
+        # treat empty dict as None for projection
         if not projection:
             result = list(collection.find(query))
         else:

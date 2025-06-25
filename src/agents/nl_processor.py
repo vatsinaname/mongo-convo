@@ -10,7 +10,7 @@ class NLProcessor:
         Parse user input and extract intent, collection, and fields.
         Returns a dict with keys: intent, collection, fields, filters
         """
-        # Only lowercase for intent/collection, preserve original for filters
+        # only lowercase for intent/collection, preserve original for filters
         intent = self._detect_intent(user_input.lower())
         collection = self._extract_collection(user_input.lower())
         fields = self._extract_fields(user_input.lower())
@@ -54,7 +54,7 @@ class NLProcessor:
             "sessions": "sessions"
         }
         for keyword, collection in collection_map.items():
-            if re.search(rf"\b{keyword}\b", text):
+            if re.search(rf"{keyword}", text):
                 return collection
         return ""
 
@@ -67,21 +67,23 @@ class NLProcessor:
         return []
 
     def _extract_filters(self, text: str) -> dict:
-        # Enhanced: extract name-based filters using regex for word match
-        # e.g. 'named John', 'with name Smith', 'whose name is Brown', 'list users John'
+        # enhanced extract name based filters using regex for word match
+        # eg 'named John', 'with name Smith', 'whose name is Brown', 'list users John'
         name_match = re.search(r"named ([a-zA-Z0-9]+)", text)
         if not name_match:
             name_match = re.search(r"name (?:is|=)? ?([a-zA-Z0-9]+)", text)
         if not name_match:
-            # e.g. 'list users John', 'show customers John'
+            # eg 'list users John' 'show customers John'
             name_match = re.search(r"(?:users?|customers?) ([a-zA-Z0-9]+)", text)
         if not name_match:
-            # fallback: if the query ends with a single capitalized word, treat as name
+            # fallback if the query ends with a single capital word treat as name
             tokens = text.strip().split()
             if len(tokens) > 1 and tokens[-1][0].isalpha() and tokens[-1][0].isupper():
                 name = tokens[-1]
-                return {"name": {"$regex": fr"\\b{name}\\b", "$options": "i"}}
+                # use substring match only, never add \b or any backslashes
+                return {"name": {"$regex": name, "$options": "i"}}
         if name_match:
             name = name_match.group(1)
-            return {"name": {"$regex": fr"\\b{name}\\b", "$options": "i"}}
+            # use substring match only, never add \b or any backslashes
+            return {"name": {"$regex": name, "$options": "i"}}
         return {}
