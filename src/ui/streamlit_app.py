@@ -232,7 +232,7 @@ def main():
         width: 900px;
         max-width: 98vw;
         margin-left: 5cm;
-        margin-right: 0;
+        margin-right: auto;
         padding-top: 2.5em;
         box-sizing: border-box;
     }
@@ -241,6 +241,12 @@ def main():
     }
     @media (max-width: 900px) {
         .main-center-container { margin-left: 0.5cm; width: 99vw; padding: 0.5em; }
+    }
+
+    /* Hide the sidebar border when sidebar is collapsed */
+    section[data-testid="stSidebar"]:not(:hover):not(:focus):not(:active)[aria-expanded="false"] {
+        border-right: none !important;
+        box-shadow: none !important;
     }
     </style>
     """, unsafe_allow_html=True)
