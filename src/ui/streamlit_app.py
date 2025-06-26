@@ -226,13 +226,13 @@ def main():
         margin-left: 0.1em;
         margin-bottom: 0.1em;
     }
-    /* Remove centering, shift main content to the left by at least 5cm */
+    /* Remove centering, shift main content to the left by at least 5cm, fix margin bug */
     .main-center-container {
         display: block;
         width: 900px;
         max-width: 98vw;
-        margin-left: 0;
-        margin-right: 45cm;
+        margin-left: 5cm;
+        margin-right: 0;
         padding-top: 2.5em;
         box-sizing: border-box;
     }
