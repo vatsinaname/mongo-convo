@@ -8,7 +8,6 @@ from agents.nl_processor import NLProcessor
 from agents.query_generator import QueryGenerator
 from agents.context_manager import ContextManager
 from utils import call_groq_api, get_groq_chat_chain, product_prompt, product_json_parser
-from ui.clarification_ui import clarification_form, clarification_window
 
 # load environment variables
 load_dotenv()
@@ -169,7 +168,12 @@ def main():
         min-width: 320px;
         max-width: 350px;
         padding-top: 1.5em;
-      }
+        /* Only remove transition from sidebar, not global */
+        transition: none !important;
+        -webkit-transition: none !important;
+        -moz-transition: none !important;
+        -o-transition: none !important;
+    }
     /* Hide sidebar border and shadow when collapsed */
     section[data-testid="stSidebar"][aria-expanded="false"] {
         border-right: none !important;
@@ -231,17 +235,23 @@ def main():
         margin-left: 0.1em;
         margin-bottom: 0.1em;
     }
-    
+    /* Restore main page transition for smooth content */
+    .main-center-container {
+        transition: all 0.25s cubic-bezier(0.4,0,0.2,1);
+    }
     </style>
     """, unsafe_allow_html=True)
+
+    # --- START main-center-container wrapper for smooth transition ---
+    st.markdown('<div class="main-center-container">', unsafe_allow_html=True)
 
     # MongoDB leaf SVG (inline, right of heading, minimal gap)
     mongodb_leaf_svg = '''<svg width="28" height="28" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" class="mongodb-leaf"><path d="M16.7 2.2c.2-.3.6-.3.8 0 2.2 3.2 7.7 12.2 7.7 19.2 0 6.2-4.2 8.2-7.2 8.6-.2 0-.3.2-.3.4v.1c0 .2-.2.4-.4.4h-.4c-.2 0-.4-.2-.4-.4v-.1c0-.2-.1-.3-.3-.4-3-0.4-7.2-2.4-7.2-8.6 0-7 5.5-16 7.7-19.2z" fill="#13aa52"/></svg>'''
     st.markdown(f"""
-    <div class='mongodb-heading'>
+    <div class='mongodb-heading' style='justify-content: flex-start; text-align: left;'>
         MongoDB Conversation Agent {mongodb_leaf_svg}
     </div>
-    <div style='margin-bottom: 1em; color: #e8f5e9;'>Chat with your MongoDB using natural language.</div>
+    <div style='margin-bottom: 1em; color: #e8f5e9; text-align: left;'>Chat with your MongoDB using natural language.</div>
     """, unsafe_allow_html=True)
 
     # sidebar for settings
@@ -295,17 +305,10 @@ def main():
         user_input = st.text_input("Ask about your database:", key="main_query_input", disabled=not bool(client))
         run_query = st.form_submit_button("Run Query", disabled=not bool(client))
 
-    clarification_needed = st.session_state.get("clarification_needed", False)
-    clarification_question = st.session_state.get("clarification_question", "")
-    clarification_prev_query = st.session_state.get("clarification_prev_query", "")
     clarification_response = ""
     clarification_submitted = False
-    if clarification_needed and clarification_question:
-        clarification_response, clarification_submitted = clarification_window(clarification_question, clarification_prev_query)
-
-    clarification_sentence = None
     # main query logic only run if button pressed and not in clarification mode
-    if run_query and user_input and client is not None and not clarification_needed:
+    if run_query and user_input and client is not None:
         context.add_message("user", user_input)
         # LLM query translation
         if use_llm_query:
@@ -379,12 +382,6 @@ def main():
                 query_info["projection"] = {"name": 1, "_id": 0}
         if not query_info.get("collection"):
             st.warning("Could not determine the collection name from your query. Please specify the collection explicitly (e.g., 'List all users from customers').")
-        # clarification logic\
-        if not collection_name or clarification_sentence:
-            st.session_state["clarification_needed"] = True
-            st.session_state["clarification_question"] = clarification_sentence or "Could not determine the collection name from your query. Please specify the collection explicitly."
-            st.session_state["clarification_prev_query"] = user_input
-            st.stop()
         # exec mongodb query if possible
         mongo_result = None
         try:
@@ -470,166 +467,17 @@ def main():
             st.error(f"LLM Error: {e}")
             context.add_message("agent", f"LLM Error: {e}")
 
-    # clarification logic only run if clarification form submitted
-    if clarification_submitted and clarification_response and client is not None:
-        # add the clarification as a user message
-        context.add_message("user", clarification_response)
-        # reset clarification state
-        st.session_state["clarification_needed"] = False
-        st.session_state["clarification_question"] = ""
-        st.session_state["clarification_prev_query"] = ""
-        # rerun the main query logic with the clarification as the latest message
-        # LLM query translation
-        if use_llm_query:
-            # compose a prompt with context, system message, and user input
-            chat_history = "\n".join([
-                f"{msg['role'].capitalize()}: {msg['message']}" for msg in context.get_history(5)
-            ])
-            llm_query_prompt = (
-                f"{SAMPLE_ANALYTICS_SYSTEM_MSG}\n"
-                f"Conversation so far:\n{chat_history}\n"
-                f"User question: {clarification_response}\n"
-                f"Translate the user's question into a MongoDB query. "
-                f"If the collection or intent is unclear think what the user might mean based on your understanding and return the MongoDB query first.\n"
-                f"Return only a JSON object with keys: collection, operation, query, projection."
-                f"Do not use 'name': 'John'. Always use the regex format as shown."            
-            )
-            try:
-                llm_query_response = call_groq_api(llm_query_prompt)
-                st.write("**LLM Query Translation Output:**")
-                st.code(llm_query_response, language="json")
-                # try to extract and parse the JSON from the LLM output
-                if llm_query_response:
-                    # show raw LLM output for debugging
-                    st.expander("LLM Raw Output / Debug").write(llm_query_response)
-                    query_info = extract_json_from_text(llm_query_response, debug=True, st_warn=st.warning)
-                    if not query_info:
-                        st.warning("Could not extract valid JSON from LLM output. Falling back to rule-based translation.")
-                        # show attempted JSON blocks for debugging
-                        import re
-                        matches = re.findall(r'\{[\s\S]*?\}', llm_query_response)
-                        if matches:
-                            st.expander("Attempted JSON blocks").write(matches)
-                        parsed = nl_processor.parse(clarification_response)
-                        st.write("Parsed:", parsed)  # debug output
-                        query_info = query_generator.generate(parsed)
-                else:
-                    st.warning("LLM did not return a response. Falling back to rule-based translation.")
-                    parsed = nl_processor.parse(clarification_response)
-                    st.write("Parsed:", parsed)  # debug output
-                    query_info = query_generator.generate(parsed)
-            except Exception as e:
-                st.error(f"LLM Query Translation Error: {e}")
-                parsed = nl_processor.parse(clarification_response)
-                st.write("Parsed:", parsed)  # debug output
-                query_info = query_generator.generate(parsed)
-        else:
-            parsed = nl_processor.parse(clarification_response)
-            st.write("Parsed:", parsed)  # debug output
-            query_info = query_generator.generate(parsed)
-            st.write("[DEBUG] Rule-based parsed:", parsed)  # TEMP DEBUG
-            st.write("[DEBUG] Rule-based query_info:", query_info)  # TEMP DEBUG
-        st.write("Query Info:", query_info)  # debug output
-        # ensure all required keys are present for MongoDB execution
-        collection_name = query_info.get("collection")
-        if "projection" not in query_info or not query_info["projection"]:
-            # always set a default projection for known collections
-            if collection_name and collection_name in DEFAULT_PROJECTIONS:
-                st.warning(f"LLM output missing or empty 'projection' field. Using default for {collection_name}.")
-                query_info["projection"] = DEFAULT_PROJECTIONS[collection_name]
-            else:
-                # default show 'name' and '_id' if possible
-                st.warning("LLM output missing 'projection' field. Using default: {'name': 1, '_id': 0}.")
-                query_info["projection"] = {"name": 1, "_id": 0}
-        if not query_info.get("collection"):
-            st.warning("Could not determine the collection name from your query. Please specify the collection explicitly (e.g., 'List all users from customers').")
-        # exec mongodb query if possible
-        mongo_result = None
-        try:
-            st.write(f"Connecting to DB: {db_name}")  # debug output
-            st.write(f"Collection: {query_info.get('collection')}")  # debug output
-            if query_info.get("operation") == "find":
-                mongo_result = client.execute_query(
-                    query_info["collection"],
-                    query_info["query"],
-                    query_info["projection"]
-                )
-            elif query_info.get("operation") == "count_documents":
-                mongo_result = client.count_documents(
-                    query_info["collection"],
-                    query_info["query"]
-                )
-            elif query_info.get("operation") == "aggregate":
-                st.warning("Aggregation pipeline is not supported in this app.")
-                mongo_result = "Aggregation pipeline is not supported."
-        except Exception as e:
-            st.error(f"MongoDB Error: {e}")
-            st.write(f"Exception details: {e}")  # debug output
-            mongo_result = f"MongoDB Error: {e}"
-        st.code(str(query_info), language="python")
-        st.write("**MongoDB Result:**")
-        st.write(mongo_result)
-        # generalised display for known collections and fields
-        #if mongo_result and isinstance(mongo_result, list) and isinstance(mongo_result[0], dict):
-            #st.write("**Results:**")
-            #for doc in mongo_result:
-                # show all projected fields for each document
-                #display_fields = [k for k in doc.keys() if k != "_id"]
-                #st.write(", ".join(f"{field}: {doc[field]}" for field in display_fields))
-        #elif not mongo_result:
-            #st.info(f"No results found in collection '{query_info['collection']}' of database '{db_name}'.")
-            # extra debug- list collections and sample doc
-        try:
-            client_db = getattr(st.session_state.client, 'current_db', None)
-            if client_db is not None:
-                collections = client_db.list_collection_names()
-                st.write(f"Collections in DB: {collections}")
-                # if query_info["collection"] in collections:
-                #     collection_obj = client_db.get_collection(query_info["collection"])
-                #     if collection_obj is not None:
-                #         sample_doc = collection_obj.find_one()
-                #         st.write(f"Sample doc in '{query_info['collection']}': {sample_doc}")
-            else:
-                st.write("No database connection available for listing collections.")
-        except Exception as e:
-            st.write(f"Error listing collections: {e}")
-        # groq langchain for structured output product extraction
-        if st.checkbox("Extract product details from your question (Groq LLM JSON)", key="extract_product_checkbox_clarification"):
-            try:
-                chain = get_groq_chat_chain(prompt_template=product_prompt, output_parser=product_json_parser)
-                product_json = chain.invoke({"input": clarification_response})
-                st.write("**Extracted Product JSON:**")
-                st.json(product_json)
-                context.add_message("agent", str(product_json))
-            except Exception as e:
-                st.error(f"Groq LangChain Error: {e}")
-                context.add_message("agent", f"Groq LangChain Error: {e}")
-        # always show LLM conversational output after MongoDB result (clarification flow)
-        chat_history = "\n".join([
-            f"{msg['role'].capitalize()}: {msg['message']}" for msg in context.get_history(5)
-        ])
-        llm_prompt = f"Conversation so far:\n{chat_history}\nUser asked: {clarification_response}\nMongoDB result: {mongo_result}\nRespond conversationally, ask clarifying questions if needed."
-        try:
-            llm_response = call_groq_api(llm_prompt)
-            clarification_keywords = ["would you like", "do you want", "should I", "can I", "could you", "please specify", "which", "what kind", "narrow down", "filter further"]
-            clarification_sentence = None
-            if llm_response:
-                for sentence in llm_response.split(". "):
-                    if "?" in sentence or any(kw in sentence.lower() for kw in clarification_keywords):
-                        clarification_sentence = sentence.strip()
-                        break
-            if clarification_sentence:
-                # Use a unique key for the clarification window form in this flow
-                st.session_state["clarification_needed"] = True
-                st.session_state["clarification_question"] = clarification_sentence
-                st.session_state["clarification_prev_query"] = clarification_response
-                st.stop()
-            st.markdown("**LLM Response:**")
-            st.write(llm_response)
-            context.add_message("agent", llm_response or "(No response)")
-        except Exception as e:
-            st.error(f"LLM Error: {e}")
-            context.add_message("agent", f"LLM Error: {e}")
+    # always show clarification textbox below LLM response and above conversation history
+    st.markdown("<hr style='margin:1.5em 0 1em 0;border:0;border-top:1.5px solid #13aa52;'>", unsafe_allow_html=True)
+    clarification_text = st.text_input(
+        "Clarification or follow-up (optional):",
+        value="",
+        key="permanent_clarification_box",
+        help="You can provide additional details, clarifications, or follow-up questions here at any time."
+    )
+    if clarification_text:
+        context.add_message("user", clarification_text)
+        st.success("Clarification/follow-up submitted. It will be included in the next query or conversation turn.")
 
     # show conversation history
     st.subheader("Conversation History")
@@ -637,6 +485,9 @@ def main():
         st.markdown(f"**{msg['role'].capitalize()}:** {msg['message']}")
     #import os
     #st.write("GROQ_API_KEY:", os.getenv("GROQ_API_KEY"))
+
+    # --- END main-center-container wrapper ---
+    st.markdown('</div>', unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
