@@ -226,16 +226,7 @@ def main():
         margin-left: 0.1em;
         margin-bottom: 0.1em;
     }
-    /* Remove centering, shift main content to the left by at least 5cm, fix margin bug */
-    .main-center-container {
-        display: block;
-        width: 900px;
-        max-width: 98vw;
-        margin-left: 5cm;
-        margin-right: auto;
-        padding-top: 2.5em;
-        box-sizing: border-box;
-    }
+    
     @media (max-width: 1200px) {
         .main-center-container { margin-left: 2cm; width: 98vw; }
     }
@@ -243,11 +234,6 @@ def main():
         .main-center-container { margin-left: 0.5cm; width: 99vw; padding: 0.5em; }
     }
 
-    /* Hide the sidebar border when sidebar is collapsed */
-    section[data-testid="stSidebar"]:not(:hover):not(:focus):not(:active)[aria-expanded="false"] {
-        border-right: none !important;
-        box-shadow: none !important;
-    }
     </style>
     """, unsafe_allow_html=True)
 
