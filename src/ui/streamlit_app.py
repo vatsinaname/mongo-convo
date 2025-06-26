@@ -169,8 +169,7 @@ def main():
         min-width: 320px;
         max-width: 350px;
         padding-top: 1.5em;
-        transition: border-right-width 0.2s, min-width 0.2s, max-width 0.2s;
-    }
+      }
     /* Hide sidebar border and shadow when collapsed */
     section[data-testid="stSidebar"][aria-expanded="false"] {
         border-right: none !important;
