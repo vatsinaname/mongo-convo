@@ -2,19 +2,11 @@
 enableStaticServing = true
 
 [theme]
-primaryColor = "#bb5a38"
-backgroundColor = "#f4f3ed"
-secondaryBackgroundColor = "#ecebe3"
-textColor = "#3d3a  2a"
-linkColor = "#3d3a2a"
-borderColor = "#d3d2ca"
-showWidgetBorder = true
-baseRadius = "0.6rem"
-font = "Inter, Segoe UI, Arial, sans-serif"
-headingFont = "Inter, Segoe UI, Arial, sans-serif"
-codeFont = "Fira Mono, Menlo, Monaco, Consolas, monospace"
-codeBackgroundColor = "#ecebe4"
-showSidebarBorder = true
+primaryColor = "#13aa52"           # mongodb green
+backgroundColor = "#0d1b24"        # deep dark blue
+secondaryBackgroundColor = "#182733" # slightly lighter dark blue
+textColor = "#e8f5e9"              # light greenish text
+font = "sans serif"
 
 [theme.sidebar]
 backgroundColor = "#e8e7dd"
