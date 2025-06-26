@@ -169,11 +169,17 @@ def main():
         min-width: 320px;
         max-width: 350px;
         padding-top: 1.5em;
+        transition: border-right-width 0.2s, min-width 0.2s, max-width 0.2s;
     }
-    .stSidebarContent, .stSidebarHeader {
-        color: #e8f5e9 !important;
-        font-weight: 600;
-        letter-spacing: 0.03em;
+    /* Hide sidebar border and shadow when collapsed */
+    section[data-testid="stSidebar"][aria-expanded="false"] {
+        border-right: none !important;
+        box-shadow: none !important;
+        min-width: 0 !important;
+        max-width: 0 !important;
+        width: 0 !important;
+        overflow: hidden !important;
+        padding: 0 !important;
     }
     /* Sidebar headings and badge */
     .stSidebarContent h2, .stSidebarContent h3, .stSidebarContent h4 {
@@ -184,14 +190,14 @@ def main():
         margin-top: 1.2em;
         margin-bottom: 0.5em;
     }
-    /* Sidebar markdown text */
+    /* sidebar markdown text */
     .stSidebarContent p, .stSidebarContent ul, .stSidebarContent li {
         color: #b7e4c7 !important;
         font-size: 1.01em;
         font-family: 'Inter', 'Segoe UI', 'Roboto', 'sans-serif';
         letter-spacing: 0.01em;
     }
-    /* Sidebar badge alignment */
+    /* sidebar badge alignment */
     .groq-badge {
         display: flex;
         align-items: center;
@@ -227,13 +233,6 @@ def main():
         margin-bottom: 0.1em;
     }
     
-    @media (max-width: 1200px) {
-        .main-center-container { margin-left: 2cm; width: 98vw; }
-    }
-    @media (max-width: 900px) {
-        .main-center-container { margin-left: 0.5cm; width: 99vw; padding: 0.5em; }
-    }
-
     </style>
     """, unsafe_allow_html=True)
 
